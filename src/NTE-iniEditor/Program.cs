@@ -6,8 +6,6 @@ namespace NTE_iniEditor;
 
 internal static class Program
 {
-    private const string 預設金鑰 = "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8";
-
     public static int Main(string[] args)
     {
         List<string> 保留的暫存檔 = [];
@@ -23,19 +21,29 @@ internal static class Program
                 return 0;
             }
 
-            byte[] key = KeyParser.ParseKey(options.Key ?? 預設金鑰);
+            IReadOnlyList<string> iniValues = options.IniNames.Count > 0
+                ? options.IniNames
+                : CliOptions.DefaultIniNames;
+
+            if (options.Android && iniValues.Any(ini => !CliOptions.IsDirectIniPath(ini)))
+            {
+                throw new ArgumentException("Android 模式沒有可自動偵測的 Windows 預設路徑，請用 --ini 指定 Android 設定檔完整路徑。");
+            }
+
+            if (options.ServerCodes.Count > 0 && iniValues.Any(CliOptions.IsDirectIniPath))
+            {
+                throw new ArgumentException("指定 --ini 完整路徑時不可同時指定 --server；完整路徑會直接讀寫該檔案。");
+            }
+
+            byte[] key = KeyParser.ParseKey(options.Key ?? (options.Android ? KnownKeys.Android : KnownKeys.Windows));
             IReadOnlyList<ServerProfile> servers = options.ServerCodes.Count > 0
                 ? KnownServers.ResolveAll(options.ServerCodes)
                 : KnownServers.All;
 
-            IReadOnlyList<string> iniNames = options.IniNames.Count > 0
-                ? options.IniNames
-                : CliOptions.DefaultIniNames;
-
             bool explicitServer = options.ServerCodes.Count > 0;
             List<EditSession> sessions = [];
 
-            foreach (string iniName in iniNames)
+            foreach (string iniName in iniValues)
             {
                 EditSession session = EditSession.Create(servers, iniName, explicitServer, key);
                 sessions.Add(session);
@@ -48,13 +56,13 @@ internal static class Program
             foreach (EditSession session in sessions)
             {
                 Console.WriteLine($"  {session.IniName}");
-                Console.WriteLine($"    來源：{session.Source.Server.DisplayName} ({session.Source.Server.Code})");
+                Console.WriteLine($"    來源：{FormatEndpoint(session.Source.Server)}");
                 Console.WriteLine($"    路徑：{session.Source.Path}");
                 Console.WriteLine($"    暫存：{session.TempFile.Path}");
                 Console.WriteLine("    將寫入：");
                 foreach (WritableTarget target in session.Targets)
                 {
-                    Console.WriteLine($"      {target.Server.DisplayName} ({target.Server.Code})：{target.Path}");
+                    Console.WriteLine($"      {FormatEndpoint(target.Server)}：{target.Path}");
                 }
             }
 
@@ -127,6 +135,19 @@ internal static class Program
             return 1;
         }
     }
+
+    private static string FormatEndpoint(ServerProfile? server)
+    {
+        return server is null
+            ? "指定檔案"
+            : $"{server.DisplayName} ({server.Code})";
+    }
+}
+
+public static class KnownKeys
+{
+    public const string Windows = "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8";
+    public const string Android = "WVCaljYeRR9qnOnpDVZ5Ly31iTV1f2RQ";
 }
 
 public sealed record ServerProfile(string Code, string DisplayName, string FolderName)
@@ -194,9 +215,9 @@ public static class KnownServers
     }
 }
 
-public sealed record CandidateFile(ServerProfile Server, string IniName, string Path, DateTime LastWriteTimeUtc);
+public sealed record CandidateFile(ServerProfile? Server, string IniName, string Path, DateTime LastWriteTimeUtc);
 
-public sealed record WritableTarget(ServerProfile Server, string IniName, string Path);
+public sealed record WritableTarget(ServerProfile? Server, string IniName, string Path);
 
 public sealed record EditSession(
     string IniName,
@@ -205,6 +226,36 @@ public sealed record EditSession(
     TempIniFile TempFile)
 {
     public static EditSession Create(
+        IReadOnlyList<ServerProfile> servers,
+        string iniName,
+        bool explicitServer,
+        byte[] key)
+    {
+        return CliOptions.IsDirectIniPath(iniName)
+            ? CreateDirect(iniName, key)
+            : CreateFromKnownServers(servers, iniName, explicitServer, key);
+    }
+
+    private static EditSession CreateDirect(string iniPath, byte[] key)
+    {
+        string fullPath = Path.GetFullPath(iniPath);
+        if (!File.Exists(fullPath))
+        {
+            throw new FileNotFoundException($"找不到指定設定檔：{fullPath}");
+        }
+
+        string iniName = Path.GetFileName(fullPath);
+        CandidateFile source = new(null, iniName, fullPath, File.GetLastWriteTimeUtc(fullPath));
+        WritableTarget target = new(null, iniName, fullPath);
+
+        string[] encryptedLines = File.ReadAllLines(fullPath, Encoding.ASCII);
+        string[] plainLines = IniCrypto.DecryptLines(encryptedLines, key);
+        TempIniFile tempFile = TempIniFile.Create(iniName, plainLines);
+
+        return new EditSession(iniName, source, [target], tempFile);
+    }
+
+    private static EditSession CreateFromKnownServers(
         IReadOnlyList<ServerProfile> servers,
         string iniName,
         bool explicitServer,
@@ -269,6 +320,7 @@ public sealed class CliOptions
     ];
 
     public string? Key { get; private init; }
+    public bool Android { get; private init; }
     public bool ShowHelp { get; private init; }
     public IReadOnlyList<string> ServerCodes { get; private init; } = [];
     public IReadOnlyList<string> IniNames { get; private init; } = [];
@@ -276,6 +328,7 @@ public sealed class CliOptions
     public static CliOptions Parse(string[] args)
     {
         string? key = null;
+        bool android = false;
         bool showHelp = false;
         List<string> servers = [];
         List<string> iniNames = [];
@@ -286,6 +339,12 @@ public sealed class CliOptions
             if (arg is "--help" or "-h" or "/?" or "--說明")
             {
                 showHelp = true;
+                continue;
+            }
+
+            if (arg is "--android" or "-a" or "--安卓")
+            {
+                android = true;
                 continue;
             }
 
@@ -313,6 +372,7 @@ public sealed class CliOptions
         return new CliOptions
         {
             Key = key,
+            Android = android,
             ShowHelp = showHelp,
             ServerCodes = servers,
             IniNames = iniNames
@@ -322,10 +382,11 @@ public sealed class CliOptions
     public static void PrintUsage()
     {
         Console.WriteLine("用法：");
-        Console.WriteLine("  NTE-iniEditor.exe [--key <key>] [--server <Saved|Saved_GAT|Saved_Global>] [--ini <filename.ini>]");
+        Console.WriteLine("  NTE-iniEditor.exe [--android] [--key <key>] [--server <Saved|Saved_GAT|Saved_Global>] [--ini <filename.ini|path>]");
         Console.WriteLine();
         Console.WriteLine("預設金鑰：");
-        Console.WriteLine("  UVbP6pjjw5KZhvddie3tfhg1pVkkveY8");
+        Console.WriteLine($"  Windows：{KnownKeys.Windows}");
+        Console.WriteLine($"  Android：{KnownKeys.Android}");
         Console.WriteLine();
         Console.WriteLine("區服：");
         Console.WriteLine("  Saved：陸服");
@@ -340,12 +401,15 @@ public sealed class CliOptions
         Console.WriteLine("  未指定區服時，每個 ini 會使用現有副本中修改時間最新者作為編輯來源，");
         Console.WriteLine("  並在儲存後覆蓋該 ini 已存在的所有區服副本。");
         Console.WriteLine("  指定區服時，只讀寫指定區服。");
+        Console.WriteLine("  --ini 指定完整或相對路徑時，會直接讀寫該檔案，不套用區服路徑。");
+        Console.WriteLine("  --android 會改用 Android 設定檔金鑰，且需搭配 --ini 完整或相對路徑。");
         Console.WriteLine();
         Console.WriteLine("範例：");
         Console.WriteLine("  NTE-iniEditor.exe");
         Console.WriteLine("  NTE-iniEditor.exe --server Saved_GAT");
         Console.WriteLine("  NTE-iniEditor.exe --ini Engine.ini");
         Console.WriteLine("  NTE-iniEditor.exe --server Saved_Global --ini GameUserSettings.ini");
+        Console.WriteLine("  NTE-iniEditor.exe --android --ini C:\\path\\to\\Android\\GameUserSettings.ini");
     }
 
     private static bool IsValueOption(
@@ -421,16 +485,16 @@ public sealed class CliOptions
             throw new ArgumentException("設定檔名稱不可為空。");
         }
 
-        if (Path.IsPathRooted(trimmed) ||
-            trimmed.Contains(Path.DirectorySeparatorChar) ||
-            trimmed.Contains(Path.AltDirectorySeparatorChar))
-        {
-            throw new ArgumentException($"設定檔名稱只接受檔名，不接受路徑：{value}");
-        }
-
         return trimmed.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)
             ? trimmed
             : trimmed + ".ini";
+    }
+
+    public static bool IsDirectIniPath(string value)
+    {
+        return Path.IsPathRooted(value) ||
+            value.Contains(Path.DirectorySeparatorChar) ||
+            value.Contains(Path.AltDirectorySeparatorChar);
     }
 }
 

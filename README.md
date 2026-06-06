@@ -12,7 +12,8 @@ NTE-iniEditor 是一支 Windows 命令列小工具，用來編輯《NTE》存在
 
 - **自動解密 / 加密**：你只需要編輯一般的純文字 `ini`，加解密交給工具處理。
 - **多區服**：內建陸服、台港澳服、國際服三種安裝路徑，可自動偵測或手動指定。
-- **多設定檔**：預設同時開啟 `GameUserSettings.ini` 與 `Engine.ini`，也可自選其他檔案。
+- **多設定檔**：預設同時開啟 `GameUserSettings.ini` 與 `Engine.ini`，也可自選其他檔案或直接指定完整路徑。
+- **Android 檔案支援**：可用 `--android` / `-a` 搭配 `--ini <路徑>` 編輯 Android 端匯出的加密設定檔。
 - **安全機制**：寫回前自動備份原檔、原子寫入、寫回後再解密驗證內容一致；任何步驟失敗都會保留暫存明文檔，避免編輯成果遺失。
 - **免安裝執行檔**：以 .NET 8 Native AOT 發佈為單一 `exe`，目標機器不需另外安裝 .NET 執行環境。
 
@@ -49,6 +50,12 @@ NTE-iniEditor 是一支 Windows 命令列小工具，用來編輯《NTE》存在
 # 指定區服 + 單一設定檔
 .\NTE-iniEditor.exe --server Saved_Global --ini GameUserSettings.ini
 
+# 直接編輯指定路徑的設定檔
+.\NTE-iniEditor.exe --ini "D:\Backups\NTE\GameUserSettings.ini"
+
+# 編輯 Android 端匯出的設定檔
+.\NTE-iniEditor.exe --android --ini "C:\Users\YUser\Downloads\tw.com.iwplay.nte\user.tar\files\UnrealGame\HT\HT\Saved\Config\Android\GameUserSettings.ini"
+
 # 使用自訂金鑰
 .\NTE-iniEditor.exe --key "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8"
 
@@ -60,15 +67,18 @@ NTE-iniEditor 是一支 Windows 命令列小工具，用來編輯《NTE》存在
 
 | 參數 | 別名 | 說明 |
 | --- | --- | --- |
+| `--android` | `-a`、`--安卓` | 使用 Android 端設定檔金鑰。需搭配 `--ini <路徑>` 指定實際檔案。 |
 | `--key <金鑰>` | `-k`、`--金鑰` | 覆蓋預設金鑰。可為 32 位元組字串，或 64 字元十六進位值（可含 `0x` 前綴）。 |
 | `--server <區服>` | `-s`、`--伺服器`、`--區服` | 指定區服。可用 `Saved` / `Saved_GAT` / `Saved_Global`，或其別名（含中文）。 |
-| `--ini <檔名>` | `-i`、`--設定檔` | 指定設定檔。只接受檔名（不接受路徑），未加 `.ini` 時自動補上。 |
+| `--ini <檔名或路徑>` | `-i`、`--設定檔` | 指定設定檔。若只給檔名，會走區服預設路徑；若給完整或相對路徑，會直接讀寫該檔案。未加 `.ini` 時自動補上。 |
 | `--help` | `-h`、`/?`、`--說明` | 顯示用法說明。 |
 
 補充說明：
 
 - `--server` 與 `--ini` 可一次給多個值，以 `,` `;` `、` 分隔，例如 `--server Saved,Saved_GAT`。
 - 支援 `--參數=值` 的寫法，例如 `--ini=Engine.ini`。
+- `--ini` 指定完整或相對路徑時，不可同時指定 `--server`；工具會直接讀寫該路徑。
+- `--android` 沒有 Windows 上可自動偵測的預設路徑，因此必須搭配 `--ini` 指定 Android 匯出檔案的路徑。
 - 區服別名：
   - **陸服**：`Saved` / `陸服` / `中國服` / `CN`
   - **台港澳服**：`Saved_GAT` / `台港澳` / `台港澳服` / `港澳台` / `港澳台服` / `GAT`
@@ -94,10 +104,11 @@ Engine.ini
 預設金鑰：
 
 ```text
-UVbP6pjjw5KZhvddie3tfhg1pVkkveY8
+Windows：UVbP6pjjw5KZhvddie3tfhg1pVkkveY8
+Android：WVCaljYeRR9qnOnpDVZ5Ly31iTV1f2RQ
 ```
 
-這把金鑰是遊戲用來**混淆**設定檔的固定金鑰，並不是保護你帳號的安全密鑰，因此可以公開放在原始碼與說明文件中。只有當遊戲改用不同金鑰時，才需要用 `--key` 覆蓋。
+這些金鑰是遊戲用來**混淆**設定檔的固定金鑰，並不是保護你帳號的安全密鑰，因此可以公開放在原始碼與說明文件中。只有當遊戲改用不同金鑰時，才需要用 `--key` 覆蓋。
 
 ## 運作方式
 
@@ -117,6 +128,7 @@ UVbP6pjjw5KZhvddie3tfhg1pVkkveY8
 
 - **未指定 `--server`**：來源取所有區服中已存在、且修改時間最新的副本；寫回時覆蓋每個已存在該檔的區服（讓多份副本保持一致）。若所有區服都沒有該檔，視為錯誤。
 - **有指定 `--server`**：只讀寫指定的區服；若指定的區服缺少該檔，視為錯誤（不會略過）。
+- **`--ini` 指定路徑**：直接讀寫該路徑的單一檔案，不套用區服偵測或同步寫回。
 
 ### 安全機制
 
