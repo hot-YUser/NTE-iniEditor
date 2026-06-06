@@ -322,7 +322,7 @@ public sealed class CliOptions
     public static void PrintUsage()
     {
         Console.WriteLine("用法：");
-        Console.WriteLine("  NTE-iniEditor.exe [--金鑰 <金鑰>] [--伺服器 <Saved|Saved_GAT|Saved_Global>] [--設定檔 <檔名.ini>]");
+        Console.WriteLine("  NTE-iniEditor.exe [--key <key>] [--server <Saved|Saved_GAT|Saved_Global>] [--ini <filename.ini>]");
         Console.WriteLine();
         Console.WriteLine("預設金鑰：");
         Console.WriteLine("  UVbP6pjjw5KZhvddie3tfhg1pVkkveY8");
@@ -343,9 +343,9 @@ public sealed class CliOptions
         Console.WriteLine();
         Console.WriteLine("範例：");
         Console.WriteLine("  NTE-iniEditor.exe");
-        Console.WriteLine("  NTE-iniEditor.exe --伺服器 Saved_GAT");
-        Console.WriteLine("  NTE-iniEditor.exe --設定檔 Engine.ini");
-        Console.WriteLine("  NTE-iniEditor.exe --伺服器 Saved_Global --設定檔 GameUserSettings.ini");
+        Console.WriteLine("  NTE-iniEditor.exe --server Saved_GAT");
+        Console.WriteLine("  NTE-iniEditor.exe --ini Engine.ini");
+        Console.WriteLine("  NTE-iniEditor.exe --server Saved_Global --ini GameUserSettings.ini");
     }
 
     private static bool IsValueOption(

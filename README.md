@@ -1,6 +1,6 @@
 # NTE-iniEditor
 
-`NTE-iniEditor` 是用來編輯 NTE 本機加密 `ini` 設定檔的小工具，目標是發佈成 Windows Native AOT 執行檔。
+`NTE-iniEditor` 是用來編輯 NTE 本機加密 `ini` 設定檔的小工具。
 
 ## 功能
 
@@ -45,7 +45,7 @@ UVbP6pjjw5KZhvddie3tfhg1pVkkveY8
 可用命令列參數覆蓋：
 
 ```powershell
-.\NTE-iniEditor.exe --金鑰 "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8"
+.\NTE-iniEditor.exe --key "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8"
 ```
 
 金鑰可以是 32 位元組字串，也可以是 64 字元十六進位值；十六進位值可包含 `0x` 前綴。
@@ -63,19 +63,19 @@ UVbP6pjjw5KZhvddie3tfhg1pVkkveY8
 指定區服：
 
 ```powershell
-.\NTE-iniEditor.exe --伺服器 Saved_GAT
+.\NTE-iniEditor.exe --server Saved_GAT
 ```
 
 指定設定檔：
 
 ```powershell
-.\NTE-iniEditor.exe --設定檔 Engine.ini
+.\NTE-iniEditor.exe --ini Engine.ini
 ```
 
 指定國際服與單一設定檔：
 
 ```powershell
-.\NTE-iniEditor.exe --伺服器 Saved_Global --設定檔 GameUserSettings.ini
+.\NTE-iniEditor.exe --server Saved_Global --ini GameUserSettings.ini
 ```
 
 ## 設定選項速查

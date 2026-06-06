@@ -44,12 +44,12 @@ Run("已知密文可解出中繼資料列", () =>
     AssertEqual(";METADATA=(Diff=true, UseCommands=true)", decrypted);
 });
 
-Run("CLI 可解析台港澳服與 Engine 設定檔", () =>
+Run("CLI 可解析英文區服與 Engine 設定檔", () =>
 {
-    CliOptions options = CliOptions.Parse(["--伺服器", "台港澳服", "--設定檔", "Engine"]);
+    CliOptions options = CliOptions.Parse(["--server", "Saved_GAT", "--ini", "Engine"]);
 
     AssertEqual(1, options.ServerCodes.Count);
-    AssertEqual("台港澳服", options.ServerCodes[0]);
+    AssertEqual("Saved_GAT", options.ServerCodes[0]);
     AssertEqual(1, options.IniNames.Count);
     AssertEqual("Engine.ini", options.IniNames[0]);
 
