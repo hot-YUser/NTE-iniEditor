@@ -1,80 +1,127 @@
 # NTE-iniEditor
 
-Small Windows console tool for editing HT/NTE encrypted `GameUserSettings.ini`
-files. It is designed to be published as a Native AOT executable.
+`NTE-iniEditor` 是用來編輯 NTE 本機加密 `ini` 設定檔的小工具，目標是發佈成 Windows Native AOT 執行檔。
 
-## What it does
+## 功能
 
-On launch, the tool checks both config files under the current user's
-`%LOCALAPPDATA%` folder:
+- 自動處理 NTE 加密 `ini` 的逐行解密與重新加密。
+- 預設同時開啟 `GameUserSettings.ini` 與 `Engine.ini`。
+- 支援三個可能的本機資料目錄：
+  - `Saved`：陸服
+  - `Saved_GAT`：台港澳服
+  - `Saved_Global`：國際服
+- 未指定區服時，每個 `ini` 會使用現有副本中修改時間最新者作為編輯來源。
+- 未指定區服時，儲存後會覆蓋該 `ini` 已存在的所有區服副本。
+- 指定區服時，只讀寫指定區服。
+- 寫入前會自動備份原檔。
+- 寫入後會重新解密驗證，確認內容一致。
+- 如果加密或寫入失敗，暫存明文檔會保留，避免剛才的編輯內容遺失。
+
+## 預設路徑
+
+工具會在目前 Windows 使用者的 `%LOCALAPPDATA%` 下尋找：
 
 ```text
-HT\Saved\Config\Windows\GameUserSettings.ini
-HT\Saved_GAT\Config\Windows\GameUserSettings.ini
+HT\Saved\Config\Windows
+HT\Saved_GAT\Config\Windows
+HT\Saved_Global\Config\Windows
 ```
 
-The newer file is used as the edit source. The tool decrypts it, writes a
-temporary plain-text `.ini` file, opens that file with the default associated
-application, and waits for you to save your edits and press Enter.
+預設開啟：
 
-After that, it encrypts the edited content again, creates backups, and
-overwrites both encrypted config files with the edited version.
+```text
+GameUserSettings.ini
+Engine.ini
+```
 
-If encryption or writing fails after editing, the decrypted temporary file is
-kept and its path is printed in the console.
+## 金鑰
 
-## Key
-
-The default key is:
+預設金鑰：
 
 ```text
 UVbP6pjjw5KZhvddie3tfhg1pVkkveY8
 ```
 
-You can override it from the command line:
+可用 CLI 覆蓋：
 
 ```powershell
-htini.exe --key "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8"
+.\NTE-iniEditor.exe --金鑰 "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8"
 ```
 
-The key can be either a 32-byte string or a 64-character hex value, with or
-without a `0x` prefix.
+金鑰可以是 32 位元組字串，也可以是 64 字元十六進位值；十六進位值可包含 `0x` 前綴。
 
-## Build
+## 使用方式
 
-Regular build:
+關閉遊戲後執行：
+
+```powershell
+.\NTE-iniEditor.exe
+```
+
+工具會用系統預設程式開啟暫存的明文 `ini`。完成編輯並儲存後，回到命令列按 Enter，工具就會重新加密並寫回。
+
+指定區服：
+
+```powershell
+.\NTE-iniEditor.exe --伺服器 Saved_GAT
+```
+
+指定設定檔：
+
+```powershell
+.\NTE-iniEditor.exe --設定檔 Engine.ini
+```
+
+指定國際服與單一設定檔：
+
+```powershell
+.\NTE-iniEditor.exe --伺服器 Saved_Global --設定檔 GameUserSettings.ini
+```
+
+## 建置
+
+一般建置：
 
 ```powershell
 dotnet build .\NTE-iniEditor.sln -c Release
 ```
 
-Run tests:
+執行測試：
 
 ```powershell
 dotnet run --project .\tests\NTE-iniEditor.Tests\NTE-iniEditor.Tests.csproj -c Release
 ```
 
-Publish a Native AOT executable:
+發佈 Windows Native AOT 執行檔：
 
 ```powershell
 dotnet publish .\src\NTE-iniEditor\NTE-iniEditor.csproj -c Release -r win-x64 --self-contained true
 ```
 
-The executable will be under:
+產物位置：
 
 ```text
 src\NTE-iniEditor\bin\Release\net8.0\win-x64\publish\NTE-iniEditor.exe
 ```
 
-## Usage
+## 備份
 
-Close the game first, then run:
+每次寫回前，工具會在原檔旁建立備份，例如：
 
-```powershell
-NTE-iniEditor.exe
+```text
+GameUserSettings.ini.bak-20260606-191500
+Engine.ini.bak-20260606-191500
 ```
 
-Edit the opened `.ini` file, save it, return to the console, and press Enter.
+## 專案簡介
 
-Backups are written next to the original files with a `.bak-YYYYMMDD-HHMMSS`
-suffix.
+NTE-iniEditor：用於編輯 NTE 加密本機 ini 設定檔的 Windows Native AOT 小工具。
+
+## 發行說明草稿
+
+初版功能：
+
+- 支援 `Saved`、`Saved_GAT`、`Saved_Global` 三種本機資料目錄。
+- 預設同時編輯 `GameUserSettings.ini` 與 `Engine.ini`。
+- 支援 CLI 指定區服、設定檔與金鑰。
+- 編輯前解密，儲存後重新加密並備份原檔。

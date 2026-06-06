@@ -6,11 +6,11 @@ namespace NTE_iniEditor;
 
 internal static class Program
 {
-    private const string DefaultKey = "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8";
+    private const string 預設金鑰 = "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8";
 
     public static int Main(string[] args)
     {
-        string? tempPathForError = null;
+        List<string> 保留的暫存檔 = [];
 
         try
         {
@@ -23,86 +23,105 @@ internal static class Program
                 return 0;
             }
 
-            byte[] key = KeyParser.ParseKey(options.Key ?? DefaultKey);
-            TargetFile[] targets =
-            [
-                new("Saved", DefaultPaths.SavedGameUserSettings),
-                new("Saved_GAT", DefaultPaths.SavedGatGameUserSettings)
-            ];
+            byte[] key = KeyParser.ParseKey(options.Key ?? 預設金鑰);
+            IReadOnlyList<ServerProfile> servers = options.ServerCodes.Count > 0
+                ? KnownServers.ResolveAll(options.ServerCodes)
+                : KnownServers.All;
 
-            TargetFile workingTarget = TargetSelector.SelectNewestExisting(targets);
+            IReadOnlyList<string> iniNames = options.IniNames.Count > 0
+                ? options.IniNames
+                : CliOptions.DefaultIniNames;
 
-            Console.WriteLine("HT encrypted GameUserSettings editor");
-            Console.WriteLine();
-            Console.WriteLine("Candidate files:");
-            foreach (TargetFile target in targets)
+            bool explicitServer = options.ServerCodes.Count > 0;
+            List<EditSession> sessions = [];
+
+            foreach (string iniName in iniNames)
             {
-                string state = File.Exists(target.Path)
-                    ? File.GetLastWriteTime(target.Path).ToString("yyyy-MM-dd HH:mm:ss")
-                    : "missing";
-                Console.WriteLine($"  {target.Name}: {target.Path}");
-                Console.WriteLine($"    Last write: {state}");
+                EditSession session = EditSession.Create(servers, iniName, explicitServer, key);
+                sessions.Add(session);
+                保留的暫存檔.Add(session.TempFile.Path);
+            }
+
+            Console.WriteLine("NTE-iniEditor");
+            Console.WriteLine();
+            Console.WriteLine("本次開啟的設定檔：");
+            foreach (EditSession session in sessions)
+            {
+                Console.WriteLine($"  {session.IniName}");
+                Console.WriteLine($"    來源：{session.Source.Server.DisplayName} ({session.Source.Server.Code})");
+                Console.WriteLine($"    路徑：{session.Source.Path}");
+                Console.WriteLine($"    暫存：{session.TempFile.Path}");
+                Console.WriteLine("    將寫入：");
+                foreach (WritableTarget target in session.Targets)
+                {
+                    Console.WriteLine($"      {target.Server.DisplayName} ({target.Server.Code})：{target.Path}");
+                }
             }
 
             Console.WriteLine();
-            Console.WriteLine($"Working source: {workingTarget.Name}");
-            Console.WriteLine($"Reading: {workingTarget.Path}");
-
-            string[] encryptedLines = File.ReadAllLines(workingTarget.Path, Encoding.ASCII);
-            string[] plainLines = IniCrypto.DecryptLines(encryptedLines, key);
-
-            TempIniFile tempIni = TempIniFile.Create(plainLines);
-            tempPathForError = tempIni.Path;
+            Console.WriteLine("正在使用系統預設程式開啟暫存 ini。");
+            foreach (EditSession session in sessions)
+            {
+                EditorLauncher.OpenWithDefaultApplication(session.TempFile.Path);
+            }
 
             Console.WriteLine();
-            Console.WriteLine($"Decrypted temporary file: {tempIni.Path}");
-            Console.WriteLine("Opening it with the default associated application...");
-            EditorLauncher.OpenWithDefaultApplication(tempIni.Path);
-            Console.WriteLine();
-            Console.WriteLine("Save your edits in the opened file, close the editor if needed, then return here.");
-            Console.Write("Press Enter to encrypt and write both GameUserSettings.ini files...");
+            Console.WriteLine("請在已開啟的暫存 ini 中完成編輯並儲存。");
+            Console.Write("全部儲存完成後，回到這裡按 Enter 重新加密並寫回原檔：");
             Console.ReadLine();
 
-            string[] editedLines = File.ReadAllLines(tempIni.Path, Encoding.UTF8);
-            string[] newEncryptedLines = IniCrypto.EncryptLines(editedLines, key);
             string timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-
             Console.WriteLine();
-            Console.WriteLine("Writing encrypted files:");
-            foreach (TargetFile target in targets)
+            Console.WriteLine("正在寫回加密設定檔：");
+
+            foreach (EditSession session in sessions)
             {
-                string? backupPath = FileWriter.BackupIfExists(target.Path, timestamp);
-                if (backupPath is not null)
-                {
-                    Console.WriteLine($"  Backup: {backupPath}");
-                }
+                string[] editedLines = File.ReadAllLines(session.TempFile.Path, Encoding.UTF8);
+                string[] encryptedLines = IniCrypto.EncryptLines(editedLines, key);
 
-                FileWriter.WriteAllLinesAtomic(target.Path, newEncryptedLines);
-                string[] verifyEncryptedLines = File.ReadAllLines(target.Path, Encoding.ASCII);
-                string[] verifyPlainLines = IniCrypto.DecryptLines(verifyEncryptedLines, key);
-                if (!LineComparer.Equals(editedLines, verifyPlainLines))
+                foreach (WritableTarget target in session.Targets)
                 {
-                    throw new InvalidOperationException($"Verification failed after writing: {target.Path}");
-                }
+                    string? backupPath = FileWriter.BackupIfExists(target.Path, timestamp);
+                    if (backupPath is not null)
+                    {
+                        Console.WriteLine($"  備份：{backupPath}");
+                    }
 
-                Console.WriteLine($"  Updated: {target.Path}");
+                    FileWriter.WriteAllLinesAtomic(target.Path, encryptedLines);
+                    string[] verifyEncryptedLines = File.ReadAllLines(target.Path, Encoding.ASCII);
+                    string[] verifyPlainLines = IniCrypto.DecryptLines(verifyEncryptedLines, key);
+                    if (!LineComparer.Equals(editedLines, verifyPlainLines))
+                    {
+                        throw new InvalidOperationException($"寫入後驗證失敗：{target.Path}");
+                    }
+
+                    Console.WriteLine($"  更新：{target.Path}");
+                }
+            }
+
+            foreach (EditSession session in sessions)
+            {
+                session.TempFile.Delete();
+                保留的暫存檔.Remove(session.TempFile.Path);
             }
 
             Console.WriteLine();
-            Console.WriteLine("Done. Both files now contain the edited settings.");
-            tempIni.Delete();
-            tempPathForError = null;
+            Console.WriteLine("完成。");
             return 0;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine();
-            Console.Error.WriteLine("Error:");
+            Console.Error.WriteLine("錯誤：");
             Console.Error.WriteLine(ex.Message);
-            if (tempPathForError is not null)
+            if (保留的暫存檔.Count > 0)
             {
                 Console.Error.WriteLine();
-                Console.Error.WriteLine($"The decrypted temporary file was kept here: {tempPathForError}");
+                Console.Error.WriteLine("以下暫存明文檔已保留，方便你取回剛才的編輯內容：");
+                foreach (string path in 保留的暫存檔)
+                {
+                    Console.Error.WriteLine($"  {path}");
+                }
             }
 
             return 1;
@@ -110,90 +129,308 @@ internal static class Program
     }
 }
 
-public sealed record TargetFile(string Name, string Path);
-
-public static class DefaultPaths
+public sealed record ServerProfile(string Code, string DisplayName, string FolderName)
 {
-    public static string SavedGameUserSettings { get; } = Path.Combine(
+    public string ConfigDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "HT",
-        "Saved",
+        FolderName,
         "Config",
-        "Windows",
-        "GameUserSettings.ini");
+        "Windows");
 
-    public static string SavedGatGameUserSettings { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "HT",
-        "Saved_GAT",
-        "Config",
-        "Windows",
-        "GameUserSettings.ini");
+    public string GetIniPath(string iniName) => Path.Combine(ConfigDirectory, iniName);
+}
+
+public static class KnownServers
+{
+    public static IReadOnlyList<ServerProfile> All { get; } =
+    [
+        new("Saved", "陸服", "Saved"),
+        new("Saved_GAT", "台港澳服", "Saved_GAT"),
+        new("Saved_Global", "國際服", "Saved_Global")
+    ];
+
+    public static IReadOnlyList<ServerProfile> ResolveAll(IReadOnlyList<string> values)
+    {
+        List<ServerProfile> servers = [];
+        foreach (string value in values)
+        {
+            ServerProfile server = Resolve(value);
+            if (!servers.Any(existing => string.Equals(existing.Code, server.Code, StringComparison.OrdinalIgnoreCase)))
+            {
+                servers.Add(server);
+            }
+        }
+
+        return servers;
+    }
+
+    public static ServerProfile Resolve(string value)
+    {
+        string normalized = value.Trim();
+        foreach (ServerProfile server in All)
+        {
+            if (string.Equals(normalized, server.Code, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, server.DisplayName, StringComparison.OrdinalIgnoreCase) ||
+                IsAlias(normalized, server.Code))
+            {
+                return server;
+            }
+        }
+
+        string available = string.Join("、", All.Select(server => $"{server.Code} ({server.DisplayName})"));
+        throw new ArgumentException($"未知區服：{value}。可用區服：{available}");
+    }
+
+    private static bool IsAlias(string value, string code)
+    {
+        return code switch
+        {
+            "Saved" => value is "陸服" or "中國服" or "CN",
+            "Saved_GAT" => value is "台港澳" or "台港澳服" or "港澳台" or "港澳台服" or "GAT",
+            "Saved_Global" => value is "國際" or "國際服" or "Global",
+            _ => false
+        };
+    }
+}
+
+public sealed record CandidateFile(ServerProfile Server, string IniName, string Path, DateTime LastWriteTimeUtc);
+
+public sealed record WritableTarget(ServerProfile Server, string IniName, string Path);
+
+public sealed record EditSession(
+    string IniName,
+    CandidateFile Source,
+    IReadOnlyList<WritableTarget> Targets,
+    TempIniFile TempFile)
+{
+    public static EditSession Create(
+        IReadOnlyList<ServerProfile> servers,
+        string iniName,
+        bool explicitServer,
+        byte[] key)
+    {
+        List<CandidateFile> existingFiles = [];
+        foreach (ServerProfile server in servers)
+        {
+            string path = server.GetIniPath(iniName);
+            if (File.Exists(path))
+            {
+                existingFiles.Add(new CandidateFile(server, iniName, path, File.GetLastWriteTimeUtc(path)));
+            }
+        }
+
+        if (existingFiles.Count == 0)
+        {
+            string serverNames = string.Join("、", servers.Select(server => $"{server.Code} ({server.DisplayName})"));
+            throw new FileNotFoundException($"在指定區服中找不到 {iniName}：{serverNames}");
+        }
+
+        if (explicitServer)
+        {
+            List<string> missing = [];
+            foreach (ServerProfile server in servers)
+            {
+                string path = server.GetIniPath(iniName);
+                if (!File.Exists(path))
+                {
+                    missing.Add($"{server.Code} ({server.DisplayName})：{path}");
+                }
+            }
+
+            if (missing.Count > 0)
+            {
+                throw new FileNotFoundException($"指定區服缺少 {iniName}：" + Environment.NewLine + string.Join(Environment.NewLine, missing));
+            }
+        }
+
+        CandidateFile source = existingFiles
+            .OrderByDescending(file => file.LastWriteTimeUtc)
+            .First();
+
+        List<WritableTarget> targets = explicitServer
+            ? servers.Select(server => new WritableTarget(server, iniName, server.GetIniPath(iniName))).ToList()
+            : existingFiles.Select(file => new WritableTarget(file.Server, iniName, file.Path)).ToList();
+
+        string[] encryptedLines = File.ReadAllLines(source.Path, Encoding.ASCII);
+        string[] plainLines = IniCrypto.DecryptLines(encryptedLines, key);
+        TempIniFile tempFile = TempIniFile.Create(iniName, plainLines);
+
+        return new EditSession(iniName, source, targets, tempFile);
+    }
 }
 
 public sealed class CliOptions
 {
+    public static IReadOnlyList<string> DefaultIniNames { get; } =
+    [
+        "GameUserSettings.ini",
+        "Engine.ini"
+    ];
+
     public string? Key { get; private init; }
     public bool ShowHelp { get; private init; }
+    public IReadOnlyList<string> ServerCodes { get; private init; } = [];
+    public IReadOnlyList<string> IniNames { get; private init; } = [];
 
     public static CliOptions Parse(string[] args)
     {
         string? key = null;
         bool showHelp = false;
+        List<string> servers = [];
+        List<string> iniNames = [];
 
         for (int i = 0; i < args.Length; i++)
         {
             string arg = args[i];
-            if (arg is "--help" or "-h" or "/?")
+            if (arg is "--help" or "-h" or "/?" or "--說明")
             {
                 showHelp = true;
                 continue;
             }
 
-            if (arg is "--key" or "-k")
+            if (IsValueOption(arg, "--key", "-k", "--金鑰", out string? inlineKey))
             {
-                if (i + 1 >= args.Length)
-                {
-                    throw new ArgumentException($"{arg} requires a value.");
-                }
-
-                key = args[++i];
+                key = inlineKey ?? ReadNextValue(args, ref i, arg);
                 continue;
             }
 
-            const string keyPrefix = "--key=";
-            if (arg.StartsWith(keyPrefix, StringComparison.Ordinal))
+            if (IsValueOption(arg, "--server", "-s", "--伺服器", "--區服", out string? inlineServer))
             {
-                key = arg[keyPrefix.Length..];
+                AddValues(servers, inlineServer ?? ReadNextValue(args, ref i, arg));
                 continue;
             }
 
-            throw new ArgumentException($"Unknown argument: {arg}");
+            if (IsValueOption(arg, "--ini", "-i", "--設定檔", out string? inlineIni))
+            {
+                AddValues(iniNames, inlineIni ?? ReadNextValue(args, ref i, arg), normalizeIni: true);
+                continue;
+            }
+
+            throw new ArgumentException($"未知參數：{arg}");
         }
 
         return new CliOptions
         {
             Key = key,
-            ShowHelp = showHelp
+            ShowHelp = showHelp,
+            ServerCodes = servers,
+            IniNames = iniNames
         };
     }
 
     public static void PrintUsage()
     {
-        Console.WriteLine("Usage:");
-        Console.WriteLine("  htini [--key <32-byte-string-or-64-hex-key>]");
+        Console.WriteLine("用法：");
+        Console.WriteLine("  NTE-iniEditor.exe [--金鑰 <金鑰>] [--伺服器 <Saved|Saved_GAT|Saved_Global>] [--設定檔 <檔名.ini>]");
         Console.WriteLine();
-        Console.WriteLine("Default key:");
+        Console.WriteLine("預設金鑰：");
         Console.WriteLine("  UVbP6pjjw5KZhvddie3tfhg1pVkkveY8");
         Console.WriteLine();
-        Console.WriteLine("Behavior:");
-        Console.WriteLine("  1. Reads these files under the current user's LOCALAPPDATA:");
-        Console.WriteLine("     HT\\Saved\\Config\\Windows\\GameUserSettings.ini");
-        Console.WriteLine("     HT\\Saved_GAT\\Config\\Windows\\GameUserSettings.ini");
-        Console.WriteLine("  2. Uses the newer file as the edit source.");
-        Console.WriteLine("  3. Decrypts it, opens a temporary .ini with the default app,");
-        Console.WriteLine("     then re-encrypts your edits.");
-        Console.WriteLine("  4. Backs up and overwrites both encrypted files.");
+        Console.WriteLine("區服：");
+        Console.WriteLine("  Saved：陸服");
+        Console.WriteLine("  Saved_GAT：台港澳服");
+        Console.WriteLine("  Saved_Global：國際服");
+        Console.WriteLine();
+        Console.WriteLine("預設設定檔：");
+        Console.WriteLine("  GameUserSettings.ini");
+        Console.WriteLine("  Engine.ini");
+        Console.WriteLine();
+        Console.WriteLine("行為：");
+        Console.WriteLine("  未指定區服時，每個 ini 會使用現有副本中修改時間最新者作為編輯來源，");
+        Console.WriteLine("  並在儲存後覆蓋該 ini 已存在的所有區服副本。");
+        Console.WriteLine("  指定區服時，只讀寫指定區服。");
+        Console.WriteLine();
+        Console.WriteLine("範例：");
+        Console.WriteLine("  NTE-iniEditor.exe");
+        Console.WriteLine("  NTE-iniEditor.exe --伺服器 Saved_GAT");
+        Console.WriteLine("  NTE-iniEditor.exe --設定檔 Engine.ini");
+        Console.WriteLine("  NTE-iniEditor.exe --伺服器 Saved_Global --設定檔 GameUserSettings.ini");
+    }
+
+    private static bool IsValueOption(
+        string arg,
+        string longName,
+        string shortName,
+        string chineseName,
+        out string? inlineValue)
+    {
+        return IsValueOption(arg, [longName, shortName, chineseName], out inlineValue);
+    }
+
+    private static bool IsValueOption(
+        string arg,
+        string longName,
+        string shortName,
+        string chineseName,
+        string alternativeChineseName,
+        out string? inlineValue)
+    {
+        return IsValueOption(arg, [longName, shortName, chineseName, alternativeChineseName], out inlineValue);
+    }
+
+    private static bool IsValueOption(string arg, IReadOnlyList<string> names, out string? inlineValue)
+    {
+        foreach (string name in names)
+        {
+            if (arg == name)
+            {
+                inlineValue = null;
+                return true;
+            }
+
+            string prefix = name + "=";
+            if (arg.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                inlineValue = arg[prefix.Length..];
+                return true;
+            }
+        }
+
+        inlineValue = null;
+        return false;
+    }
+
+    private static string ReadNextValue(string[] args, ref int index, string optionName)
+    {
+        if (index + 1 >= args.Length)
+        {
+            throw new ArgumentException($"{optionName} 需要指定值。");
+        }
+
+        return args[++index];
+    }
+
+    private static void AddValues(List<string> values, string rawValue, bool normalizeIni = false)
+    {
+        foreach (string item in rawValue.Split([',', ';', '、'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string value = normalizeIni ? NormalizeIniName(item) : item;
+            if (!values.Contains(value, StringComparer.OrdinalIgnoreCase))
+            {
+                values.Add(value);
+            }
+        }
+    }
+
+    public static string NormalizeIniName(string value)
+    {
+        string trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new ArgumentException("設定檔名稱不可為空。");
+        }
+
+        if (Path.IsPathRooted(trimmed) ||
+            trimmed.Contains(Path.DirectorySeparatorChar) ||
+            trimmed.Contains(Path.AltDirectorySeparatorChar))
+        {
+            throw new ArgumentException($"設定檔名稱只接受檔名，不接受路徑：{value}");
+        }
+
+        return trimmed.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : trimmed + ".ini";
     }
 }
 
@@ -203,7 +440,7 @@ public static class KeyParser
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new ArgumentException("Key cannot be empty.");
+            throw new ArgumentException("金鑰不可為空。");
         }
 
         string trimmed = value.Trim();
@@ -225,7 +462,7 @@ public static class KeyParser
         byte[] asciiBytes = Encoding.ASCII.GetBytes(trimmed);
         if (asciiBytes.Length != 32)
         {
-            throw new ArgumentException("Key must be a 32-byte string or a 64-character hex value.");
+            throw new ArgumentException("金鑰必須是 32 位元組字串，或 64 字元十六進位值。");
         }
 
         return asciiBytes;
@@ -247,33 +484,6 @@ public static class KeyParser
         }
 
         return true;
-    }
-}
-
-public static class TargetSelector
-{
-    public static TargetFile SelectNewestExisting(IReadOnlyList<TargetFile> targets)
-    {
-        TargetFile? newest = null;
-        DateTime newestWriteTime = DateTime.MinValue;
-
-        foreach (TargetFile target in targets)
-        {
-            if (!File.Exists(target.Path))
-            {
-                continue;
-            }
-
-            DateTime writeTime = File.GetLastWriteTimeUtc(target.Path);
-            if (newest is null || writeTime > newestWriteTime)
-            {
-                newest = target;
-                newestWriteTime = writeTime;
-            }
-        }
-
-        return newest ?? throw new FileNotFoundException(
-            "Neither GameUserSettings.ini file exists under LOCALAPPDATA\\HT.");
     }
 }
 
@@ -330,7 +540,7 @@ public static class IniCrypto
     {
         if (key.Length != 32)
         {
-            throw new ArgumentException("AES-256 requires a 32-byte key.", nameof(key));
+            throw new ArgumentException("AES-256 需要 32 位元組金鑰。", nameof(key));
         }
 
         Aes aes = Aes.Create();
@@ -352,11 +562,12 @@ public sealed class TempIniFile
 
     public string Path { get; }
 
-    public static TempIniFile Create(IReadOnlyList<string> plainLines)
+    public static TempIniFile Create(string iniName, IReadOnlyList<string> plainLines)
     {
+        string safeName = SanitizeFileName(iniName);
         string path = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),
-            $"htini-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.ini");
+            $"NTE-iniEditor-{safeName}-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.ini");
 
         File.WriteAllLines(path, plainLines, Utf8NoBom);
         return new TempIniFile(path);
@@ -373,8 +584,19 @@ public sealed class TempIniFile
         }
         catch
         {
-            // Leaving a temp file behind is less harmful than hiding the real result.
         }
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        char[] invalid = System.IO.Path.GetInvalidFileNameChars();
+        StringBuilder builder = new(value.Length);
+        foreach (char c in value)
+        {
+            builder.Append(invalid.Contains(c) ? '_' : c);
+        }
+
+        return builder.ToString();
     }
 }
 
