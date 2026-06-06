@@ -4,5 +4,6 @@ obj/
 .idea/
 *.user
 *.suo
+CLAUDE.md
 *.tmp-*
 *.bak-*

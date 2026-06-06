@@ -1,40 +1,95 @@
 # NTE-iniEditor
 
-`NTE-iniEditor` 是用來編輯 NTE 本機加密 `ini` 設定檔的小工具。
+![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20x64-0078D6)
+![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
+![建置](https://img.shields.io/badge/%E5%BB%BA%E7%BD%AE-Native%20AOT-success)
 
-## 功能
+NTE-iniEditor 是一支 Windows 命令列小工具，用來編輯《NTE》存在本機、且經過加密的 `ini` 設定檔（`GameUserSettings.ini`、`Engine.ini`）。
 
-- 自動處理 NTE 加密 `ini` 的逐行解密與重新加密。
-- 預設同時開啟 `GameUserSettings.ini` 與 `Engine.ini`。
-- 支援三個可能的本機資料目錄：
-  - `Saved`：陸服
-  - `Saved_GAT`：台港澳服
-  - `Saved_Global`：國際服
-- 未指定區服時，每個 `ini` 會使用現有副本中修改時間最新者作為編輯來源。
-- 未指定區服時，儲存後會覆蓋該 `ini` 已存在的所有區服副本。
-- 指定區服時，只讀寫指定區服。
-- 寫入前會自動備份原檔。
-- 寫入後會重新解密驗證，確認內容一致。
-- 如果加密或寫入失敗，暫存明文檔會保留，避免剛才的編輯內容遺失。
+遊戲會把這些設定**逐行加密**後存檔，沒辦法直接用記事本開啟修改。這支工具負責：解密 → 用系統預設編輯器開啟暫存明文檔 → 等你改完並存檔 → 重新加密寫回，並在過程中自動備份與驗證。
 
-## 預設路徑
+## 功能特色
 
-工具會在目前 Windows 使用者的 `%LOCALAPPDATA%` 下尋找：
+- **自動解密 / 加密**：你只需要編輯一般的純文字 `ini`，加解密交給工具處理。
+- **多區服**：內建陸服、台港澳服、國際服三種安裝路徑，可自動偵測或手動指定。
+- **多設定檔**：預設同時開啟 `GameUserSettings.ini` 與 `Engine.ini`，也可自選其他檔案。
+- **安全機制**：寫回前自動備份原檔、原子寫入、寫回後再解密驗證內容一致；任何步驟失敗都會保留暫存明文檔，避免編輯成果遺失。
+- **免安裝執行檔**：以 .NET 8 Native AOT 發佈為單一 `exe`，目標機器不需另外安裝 .NET 執行環境。
 
-```text
-HT\Saved\Config\Windows
-HT\Saved_GAT\Config\Windows
-HT\Saved_Global\Config\Windows
+## 系統需求
+
+- **執行**：Windows x64。使用自含式發佈版 `exe` 不需安裝 .NET。
+- **建置**：[.NET 8 SDK](https://dotnet.microsoft.com/download)，以及 Native AOT 所需的 C++ 建置工具。
+
+## 快速開始
+
+> [!IMPORTANT]
+> 使用前請先**完全關閉遊戲**，避免讀寫衝突，或被遊戲在結束時覆寫掉你的修改。
+
+1. 關閉遊戲。
+2. 執行 `NTE-iniEditor.exe`。
+3. 工具會用系統預設程式開啟一份暫存的明文 `ini`，直接編輯並存檔。
+4. 回到命令列視窗，按 <kbd>Enter</kbd>。
+5. 工具會重新加密、備份原檔、寫回並驗證，看到「完成。」即結束。
+
+未加任何參數時的預設行為：同時處理 `GameUserSettings.ini` 與 `Engine.ini`，來源取所有區服中「修改時間最新」的副本，寫回時覆蓋所有已存在該檔的區服。
+
+## 使用方式
+
+```powershell
+# 自動偵測區服、預設兩個設定檔
+.\NTE-iniEditor.exe
+
+# 只編輯指定區服
+.\NTE-iniEditor.exe --server Saved_GAT
+
+# 只編輯指定設定檔
+.\NTE-iniEditor.exe --ini Engine.ini
+
+# 指定區服 + 單一設定檔
+.\NTE-iniEditor.exe --server Saved_Global --ini GameUserSettings.ini
+
+# 使用自訂金鑰
+.\NTE-iniEditor.exe --key "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8"
+
+# 顯示說明
+.\NTE-iniEditor.exe --help
 ```
 
-預設開啟：
+### 命令列參數
+
+| 參數 | 別名 | 說明 |
+| --- | --- | --- |
+| `--key <金鑰>` | `-k`、`--金鑰` | 覆蓋預設金鑰。可為 32 位元組字串，或 64 字元十六進位值（可含 `0x` 前綴）。 |
+| `--server <區服>` | `-s`、`--伺服器`、`--區服` | 指定區服。可用 `Saved` / `Saved_GAT` / `Saved_Global`，或其別名（含中文）。 |
+| `--ini <檔名>` | `-i`、`--設定檔` | 指定設定檔。只接受檔名（不接受路徑），未加 `.ini` 時自動補上。 |
+| `--help` | `-h`、`/?`、`--說明` | 顯示用法說明。 |
+
+補充說明：
+
+- `--server` 與 `--ini` 可一次給多個值，以 `,` `;` `、` 分隔，例如 `--server Saved,Saved_GAT`。
+- 支援 `--參數=值` 的寫法，例如 `--ini=Engine.ini`。
+- 區服別名：
+  - **陸服**：`Saved` / `陸服` / `中國服` / `CN`
+  - **台港澳服**：`Saved_GAT` / `台港澳` / `台港澳服` / `港澳台` / `港澳台服` / `GAT`
+  - **國際服**：`Saved_Global` / `國際` / `國際服` / `Global`
+
+## 預設路徑與金鑰
+
+工具會在目前 Windows 使用者的 `%LOCALAPPDATA%` 下尋找各區服設定：
+
+```text
+%LOCALAPPDATA%\HT\Saved\Config\Windows         # 陸服（未求證）
+%LOCALAPPDATA%\HT\Saved_GAT\Config\Windows     # 台港澳服
+%LOCALAPPDATA%\HT\Saved_Global\Config\Windows  # 國際服
+```
+
+預設處理的設定檔：
 
 ```text
 GameUserSettings.ini
 Engine.ini
 ```
-
-## 金鑰
 
 預設金鑰：
 
@@ -42,220 +97,84 @@ Engine.ini
 UVbP6pjjw5KZhvddie3tfhg1pVkkveY8
 ```
 
-可用命令列參數覆蓋：
+這把金鑰是遊戲用來**混淆**設定檔的固定金鑰，並不是保護你帳號的安全密鑰，因此可以公開放在原始碼與說明文件中。只有當遊戲改用不同金鑰時，才需要用 `--key` 覆蓋。
+
+## 運作方式
+
+### 加密方案
+
+設定檔是**逐行加密**而非整檔加密。每一行的處理流程為：
+
+1. 在明文行尾接上 `|SPLIT|` 標記。
+2. 以 AES-256（ECB 模式、PKCS7 填充）加密。
+3. 將密文做 Base64 編碼，成為磁碟上的一行。
+
+解密時反向操作：Base64 解碼 → AES 解密 → 去掉行尾的 `|SPLIT|`。因此磁碟上的加密檔是純 ASCII（Base64），工具開給你編輯的暫存明文檔則是 UTF-8（無 BOM）。
+
+金鑰固定為 32 位元組。`--key` 接受 32 位元組的 ASCII 字串，或 64 字元的十六進位值（可加 `0x` 前綴）。
+
+### 來源與寫入對象的判斷
+
+- **未指定 `--server`**：來源取所有區服中已存在、且修改時間最新的副本；寫回時覆蓋每個已存在該檔的區服（讓多份副本保持一致）。若所有區服都沒有該檔，視為錯誤。
+- **有指定 `--server`**：只讀寫指定的區服；若指定的區服缺少該檔，視為錯誤（不會略過）。
+
+### 安全機制
+
+- **備份**：寫回前先把原檔複製成 `原檔名.bak-yyyyMMdd-HHmmss`（同秒衝突會再附加 `-2`、`-3`…）。
+- **原子寫入**：先寫到暫存檔，再以覆蓋方式搬移到目標，避免寫到一半損毀原檔。
+- **寫回驗證**：寫入後重新讀回並解密，與你的編輯內容逐行比對，不一致就中止並報錯。
+- **失敗保留**：加密或寫入過程若發生錯誤，暫存明文檔不會被刪除，並在畫面上列出路徑，方便你取回剛才的編輯。
+
+備份與暫存檔（`*.bak-*`、`*.tmp-*`）已列入 `.gitignore`。
+
+## 常用設定速查
+
+以下只列最常調整的項目。**完整清單**（含拍照模式、載具、各 `sg.*` 細項，以及「不建議手改」的內部 / 登入 / 公告類設定與查證來源）請見 **[設定選項速查](docs/設定選項速查.md)**。
+
+開始前：`True` / `False` 代表開 / 關；多數畫質數值越高越吃效能；修改前讓工具自動備份（預設就會），真的出問題可還原 `.bak` 檔。
+
+| 選項 | 說明 | 建議值 / 備註 |
+| --- | --- | --- |
+| `FrameRateLimit` | 幀率上限，`0` 為無效設定 | 可填遊戲選單沒有的值，如 `45` / `144` / `240` |
+| `Language`、`Locale`、`AudioCulture` | 介面語言、地區格式、語音 | 例：`zh-Hant`、`ja`；不支援時可能回退 |
+| `bUseVSync` | 垂直同步 | `True` / `False` |
+| `ResolutionSizeX`、`ResolutionSizeY` | 解析度寬高 | 全螢幕下可能受遊戲套用流程影響 |
+| `FullscreenMode` | 顯示模式（全螢幕 / 無邊框 / 視窗） | 進不去遊戲時改回原本可用的值 |
+| `ScreenPercentage`、`sg.ResolutionQuality` | 內部渲染比例 | 降低可增幀；可能與 DLSS/FSR 互相覆蓋 |
+| `sg.ShadowQuality` | 陰影品質 | 降低通常是最有效的增幀方式之一 |
+| `sg.TextureQuality` | 貼圖品質 | 主要吃顯存 |
+| `sg.EffectsQuality`、`sg.PostProcessQuality` | 特效 / 後處理品質 | 影響景深、泛光、色調等 |
+| `MotionBlur` | 動態模糊 | `0` 通常為關閉 |
+| `Sound_EffectVolumn`、`Sound_VoiceVolumn`、`Sound_MusicVolumn` | 音效 / 語音 / 音樂音量 | 原檔拼字為 `Volumn` |
+| `bCameraShake` | 鏡頭震動 | 會暈 3D 可關 |
+| `FPCameraFOV` | 第一人稱 FOV | 太高會變形、太低易暈 |
+| `bInverseMouseX`、`bInverseMouseY` | 滑鼠 X / Y 反轉 | `True` / `False` |
+
+> [!WARNING]
+> `Param3`、`LastLoginUsername`、`LastLoginPassword` 與公告紀錄等可能含帳號或登入狀態資料，請勿手動修改，也不要貼到公開的 issue、截圖或發行說明。
+
+## 建置與測試
 
 ```powershell
-.\NTE-iniEditor.exe --key "UVbP6pjjw5KZhvddie3tfhg1pVkkveY8"
-```
-
-金鑰可以是 32 位元組字串，也可以是 64 字元十六進位值；十六進位值可包含 `0x` 前綴。
-
-## 使用方式
-
-關閉遊戲後執行：
-
-```powershell
-.\NTE-iniEditor.exe
-```
-
-工具會用系統預設程式開啟暫存的明文 `ini`。完成編輯並儲存後，回到命令列按 Enter，工具就會重新加密並寫回。
-
-指定區服：
-
-```powershell
-.\NTE-iniEditor.exe --server Saved_GAT
-```
-
-指定設定檔：
-
-```powershell
-.\NTE-iniEditor.exe --ini Engine.ini
-```
-
-指定國際服與單一設定檔：
-
-```powershell
-.\NTE-iniEditor.exe --server Saved_Global --ini GameUserSettings.ini
-```
-
-## 設定選項速查
-
-以下依目前解出的 `GameUserSettings.ini` 與 `Engine.ini` 選項整理。同類或重複鍵會合併列出。`Unreal Engine` 內建選項參考官方文件；NTE 自訂選項目前沒有找到公開文件，標成「推測」的項目是依鍵名、目前值與遊戲內設定含義判斷。
-
-### 建議先讀
-
-- `True` / `False`：開啟 / 關閉。
-- 多數畫質數值是越高越好、越吃效能；`Unreal Engine` 的使用者設定 API 中，許多品質項目是 `0..4`，數字越高品質越高。
-- `FrameRateLimit=0.000000` 通常代表不限制幀率；手動填 `41.000000`、`45.000000` 這類值可用來避開遊戲內只提供 30 / 60 的限制。
-- `Last...`、`Version`、`GameVersion`、登入資料、公告紀錄、網路握手資料都不建議手動修改。
-- `LastLoginUsername`、`LastLoginPassword`、`Param3` 可能含帳號或登入狀態資料，不要貼到公開 GitHub 議題、截圖或發行說明。
-
-### 基礎選項：一般人較容易理解
-
-這些項目通常對畫面、聲音、操作、拍照模式有直接影響。仍建議先備份，並優先用遊戲內設定調整。
-
-| 選項 | 所屬檔案 | 說明 | 修改建議 |
-| --- | --- | --- | --- |
-| `Language`、`Locale`、`AudioCulture` | `GameUserSettings.ini` | 介面語言、地區格式、語音文化。例：`zh-Hant`、`ja`。 | 可以改，但若遊戲不支援該語言可能會回退或顯示異常。 |
-| `FrameRateLimit` | `GameUserSettings.ini` | 幀率上限。`0.000000` 通常是不限制。 | 適合手動改，例如 `41.000000`、`45.000000`、`60.000000`。 |
-| `bUseVSync`、`CacheVsyncValue` | `GameUserSettings.ini` | 垂直同步與遊戲快取的 VSync 狀態。 | 可改 `bUseVSync`；`CacheVsyncValue` 較像內部快取，通常不動。 |
-| `ResolutionSizeX`、`ResolutionSizeY` | `GameUserSettings.ini` | 實際解析度寬高。 | 可改，但全螢幕模式下可能受螢幕與遊戲套用流程影響。 |
-| `FullscreenMode`、`PreferredFullscreenMode` | `GameUserSettings.ini` | 顯示模式。常見含義是全螢幕、無邊框全螢幕、視窗化。 | 可改；若進不去遊戲，可改回遊戲內曾正常使用的值。 |
-| `Graphics_Sharpen` | `GameUserSettings.ini` | 銳化強度。 | 可改；太高會有邊緣過銳或閃爍感。 |
-| `ColorSaturation`、`BrightnessSetting` | `GameUserSettings.ini` | 飽和度、亮度或伽瑪感受。 | 可改；數值太極端會影響辨識。 |
-| `ScreenPercentage`、`sg.ResolutionQuality` | `GameUserSettings.ini` | 內部渲染比例。降低可增幀，提高會更吃效能。 | 可改，但與 DLSS / FSR / 動態解析度可能互相覆蓋。 |
-| `bUseDynamicResolution` | `GameUserSettings.ini` | 是否啟用動態解析度。 | 可改；開啟後畫質可能隨負載浮動。 |
-| `DesktopAAMethod`、`MobileAAMethod`、`CloseOtherAAMethod` | `GameUserSettings.ini` | 抗鋸齒或升頻方式。例：`DLSS`、`TAA`。 | 可理解但不建議亂改；顯卡或平台不支援時可能無效。 |
-| `bUseDLSS`、`DLSSMode`、`bDLSSRR` | `GameUserSettings.ini` | NVIDIA DLSS 開關、模式、Ray Reconstruction。 | 有 NVIDIA RTX 顯卡時可測；模式值未公開對應表，建議用遊戲內設定為主。 |
-| `bUseFSR`、`FSRQualityMode`、`bFSRFrameGeneration` | `GameUserSettings.ini` | AMD FSR 升頻品質與補幀相關。 | 可測，但不支援時可能無效或造成畫面問題。 |
-| `RayTracingQuality` | `GameUserSettings.ini` | 光線追蹤品質。`Disable` 代表關閉。 | 可改；開啟通常大幅增加 GPU 負擔。 |
-| `GIMethod`、`ReflectionMethod` | `GameUserSettings.ini` | 全域照明與反射方法，推測對應 Lumen / SSR / 傳統方法等渲染路徑。 | 可理解但風險較高；建議先用遊戲內畫質調整。 |
-| `GraphicQualityLevel` | `GameUserSettings.ini` | 整體畫質等級。`-1` 常見於自訂畫質。 | 可改，但可能被各 `sg.*` 細項覆蓋。 |
-| `sg.ViewDistanceQuality` | `GameUserSettings.ini` | 可視距離品質。 | 可改；降低通常增幀。 |
-| `sg.AntiAliasingQuality` | `GameUserSettings.ini` | 抗鋸齒品質。 | 可改；越高越平滑但更吃效能。 |
-| `sg.ShadowQuality` | `GameUserSettings.ini` | 陰影品質。 | 可改；降低通常是最有效的增幀方式之一。 |
-| `sg.GlobalIlluminationQuality` | `GameUserSettings.ini` | 全域照明品質。 | 可改；越高越吃效能。 |
-| `sg.ReflectionQuality` | `GameUserSettings.ini` | 反射品質。 | 可改；越高越吃效能。 |
-| `sg.PostProcessQuality` | `GameUserSettings.ini` | 後處理品質。 | 可改；影響景深、泛光、色調等效果。 |
-| `sg.TextureQuality` | `GameUserSettings.ini` | 貼圖品質。 | 可改；主要吃顯存。 |
-| `sg.EffectsQuality` | `GameUserSettings.ini` | 特效品質。 | 可改；戰鬥或場景特效多時影響較明顯。 |
-| `sg.FoliageQuality` | `GameUserSettings.ini` | 植被品質。 | 可改；戶外場景可能差異明顯。 |
-| `sg.ShadingQuality` | `GameUserSettings.ini` | 著色品質。 | 可改；影響材質與光照觀感。 |
-| `sg.LandscapeQuality` | `GameUserSettings.ini` | 地形品質。 | 可改；戶外地形可能受影響。 |
-| `MotionBlur` | `GameUserSettings.ini` | 動態模糊。 | 可改；`0` 通常代表關閉。 |
-| `NPCQuality` | `GameUserSettings.ini` | NPC 顯示或細節品質，推測。 | 可改；可能影響人群或角色細節。 |
-| `Sound_EffectVolumn`、`Sound_VoiceVolumn`、`Sound_MusicVolumn` | `GameUserSettings.ini` | 音效、語音、音樂音量。原檔拼字是 `Volumn`。 | 可改，通常是百分比或接近百分比的數值。 |
-| `Sound_EffectVolumn_Mute`、`Sound_VoiceVolumn_Mute`、`Sound_MusicVolumn_Mute` | `GameUserSettings.ini` | 音效、語音、音樂靜音。 | 可改 `True` / `False`。 |
-| `Motion_Volume_Rtpc`、`Motion_Volume_Rtpc_Mute` | `GameUserSettings.ini` | 可能是動作、震動或特定 RTPC 音量控制，推測。 | 可改但含義未公開；一般不必動。 |
-| `SurroundSound` | `GameUserSettings.ini` | 環繞聲或空間音效選項，推測。 | 可改；若音訊異常可還原。 |
-| `Setting_UIOpacity`、`Setting_PropMessageOpacity` | `GameUserSettings.ini` | UI 與道具訊息透明度，推測。 | 可改；太低可能看不清 UI。 |
-| `bCameraShake` | `GameUserSettings.ini` | 鏡頭震動。 | 可改；暈 3D 可關閉。 |
-| `bOpenHitPause` | `GameUserSettings.ini` | 打擊停頓或命中停格效果。 | 可改；關閉可能讓戰鬥更流暢但打擊感變弱。 |
-| `bOpenDamageFloatsWidget` | `GameUserSettings.ini` | 傷害數字顯示。 | 可改；關閉可減少畫面資訊。 |
-| `bNpcCanDialogMarkShow` | `GameUserSettings.ini` | NPC 對話標記顯示。 | 可改；關閉可能不易找任務或對話。 |
-| `bOpenPlayerBufferList`、`bOpenMonsterBufferList` | `GameUserSettings.ini` | 玩家 / 怪物狀態列表顯示。 | 可改；關閉可能少看狀態資訊。 |
-| `bIsBufferSimplifiedMode` | `GameUserSettings.ini` | 狀態列表簡化模式。 | 可改；適合想減少 UI 干擾的人。 |
-| `bShowManualLockButton` | `GameUserSettings.ini` | 手動鎖定按鈕顯示。 | 可改；影響操作 UI。 |
-| `bResetCameraWhenLockTarget`、`bAutoModifyCameraWhileRunning` | `GameUserSettings.ini` | 鎖定目標或跑步時自動調整鏡頭。 | 可改；影響手感。 |
-| `bInFirstPersonView`、`FPCameraFOV`、`fFPCameraFOV` | `GameUserSettings.ini` | 第一人稱視角與 FOV。 | 可改；FOV 太高可能變形，太低可能暈。 |
-| `FPCameraSmoothScale`、`fFPCameraSmoothScale` | `GameUserSettings.ini` | 第一人稱鏡頭平滑度。 | 可改；越高可能越平滑但反應較慢。 |
-| `FightDefaultArmLengthScale`、`fFightDefaultArmLengthScale` | `GameUserSettings.ini` | 戰鬥鏡頭距離比例，推測。 | 可改；影響角色與鏡頭距離。 |
-| `bUseLockTargetAngle`、`fLockTargetAngleScale`、`LockDirectionCondition` | `GameUserSettings.ini` | 鎖定目標角度與鎖定方向條件，推測。 | 可改但建議小幅測試。 |
-| `SteeringSensitivity`、`fSteeringSensitivity`、`fSteeringDead` | `GameUserSettings.ini` | 轉向靈敏度與死區。 | 可改；手把或載具操作不順時可測。 |
-| `JoyStickMode` | `GameUserSettings.ini` | 搖桿模式。例：`Fixed`。 | 可改但需知道遊戲支援值。 |
-| `bInverseMouseX`、`bInverseMouseY` | `GameUserSettings.ini` | 滑鼠 X / Y 反轉。 | 可改。 |
-| `DrawMiniMapNavigationPath` | `GameUserSettings.ini` | 小地圖導航路徑顯示。 | 可改。 |
-| `VehicleDriveMode`、`VehicleBrakeChangeKey` | `GameUserSettings.ini` | 載具駕駛模式與煞車鍵切換，推測。 | 可改；影響載具手感。 |
-| `VehicleThirdPersonCameraAutoAdjustDuration`、`fVehicleThirdPersonCameraAutoAdjustDuration` | `GameUserSettings.ini` | 載具第三人稱鏡頭自動調整時間。 | 可改；數值越大可能回正越慢。 |
-| `VehicleFirstPersonCameraAutoAdjustDuration`、`fVehicleFirstPersonCameraAutoAdjustDuration` | `GameUserSettings.ini` | 載具第一人稱鏡頭自動調整時間。 | 可改。 |
-| `VehicleThirdPersonCameraAdditionalHeight`、`fVehicleThirdPersonCameraAdditionalHeight` | `GameUserSettings.ini` | 載具第三人稱鏡頭額外高度。 | 可改；太高或太低會影響視野。 |
-| `bAutoDrivingAdjustCamera` | `GameUserSettings.ini` | 自動駕駛時調整鏡頭，推測。 | 可改。 |
-| `bSelfieShowSelf`、`bSelfieShowFriendNpc`、`bSelfieShowMonster`、`bSelfieShowWeapon` | `GameUserSettings.ini` | 拍照模式顯示自己、友方 NPC、怪物、武器。 | 可改；影響拍照構圖。 |
-| `bSelfieOpenDof`、`bOpenFocal`、`SelfieFocalLength`、`CurrentAperture`、`ManualFocusDistance`、`FocalSliderValue` | `GameUserSettings.ini` | 拍照模式景深、焦距、光圈、手動對焦。 | 可改；數值極端可能讓畫面失焦。 |
-| `bSelfieOptionSave` | `GameUserSettings.ini` | 拍照模式選項是否保存，推測。 | 可改但通常交給拍照模式自動維護。 |
-| `bSelfieCameraVirtual`、`bSelfieFaceToCamera`、`SelfiePlayerRotator`、`SelfieCameraRotator` | `GameUserSettings.ini` | 拍照模式虛擬鏡頭、面向鏡頭與旋轉狀態。 | 可改但建議在拍照模式內調。 |
-| `bSelfieShowWatermark` | `GameUserSettings.ini` | 拍照浮水印。 | 可改。 |
-| `bOpenAuxiliaryLine` | `GameUserSettings.ini` | 拍照輔助線。 | 可改。 |
-| `SelfieBrightness`、`SelfieSaturation`、`SelfieContrast`、`SelfieTemperature`、`SelfieTint`、`SelfieBloomIntensity`、`SelfieBloomThreshold`、`SelfieVignette` | `GameUserSettings.ini` | 拍照模式亮度、飽和、對比、色溫、色偏、泛光、暗角。 | 可改；太極端會影響成像。 |
-| `bCanClimbOnlyWhenFallingInCombat` | `GameUserSettings.ini` | 戰鬥中攀爬條件，推測。 | 可能影響操作規則，建議不要手改。 |
-| `EquipStrengthenSortType` | `GameUserSettings.ini` | 裝備強化排序方式，推測。 | 可理解但不建議手改；可由遊戲 UI 調整較安全。 |
-
-### 進階選項：非必要不建議修改
-
-這些項目多半是遊戲內部狀態、快取、版本、登入、公告、網路或複合資料。看得懂不代表適合手改。
-
-| 選項 | 所屬檔案 | 說明 | 建議 |
-| --- | --- | --- | --- |
-| `;METADATA=(Diff=true, UseCommands=true)` | 兩種 ini | Unreal 設定檔中繼資料。 | 不要改。 |
-| `CatchLoginHandle` | `GameUserSettings.ini` | 登入流程或登入處理代號，推測。 | 不要改。 |
-| `ShowPSOPreComplieVersion` | `GameUserSettings.ini` | PSO 預編譯顯示或版本記錄，推測。PSO 常與材質或管線快取相關。 | 不要改。 |
-| `GameVersion`、`Version` | `GameUserSettings.ini` | 遊戲設定或 Unreal 使用者設定版本。 | 不要改，可能導致遊戲重建設定。 |
-| `bNeedModifyDLSSMode` | `GameUserSettings.ini` | 是否需要修正 DLSS 模式的內部旗標，推測。 | 不要改。 |
-| `StreamlineMode` | `GameUserSettings.ini` | NVIDIA Streamline 整合狀態。 | 不要改；可能和 DLSS / Reflex / 補幀整合有關。 |
-| `bIsEnableMetalFX` | `GameUserSettings.ini` | Apple MetalFX 啟用狀態。Windows 上通常不需要。 | 不要改。 |
-| `bIsEnableHmsXeg` | `GameUserSettings.ini` | 名稱疑似平台或升頻相關旗標，未找到公開資料。 | 不要改。 |
-| `MobileAFME`、`bMobileHWFG`、`bMobileMFRC`、`MobileRes`、`MobileDrawIconsLimitOverride` | `GameUserSettings.ini` | 行動平台或補幀、解析度、圖示限制相關選項，推測。 | Windows 玩家通常不需要改。 |
-| `PSCrossPlatform` | `GameUserSettings.ini` | 跨平台狀態，推測可能與 PlayStation 或平台互通相關。 | 不要改。 |
-| `bEnableNPCWalkIK`、`bEnablePlayerFootIK` | `GameUserSettings.ini` | NPC / 玩家足部 IK 動畫。 | 不建議改；可能影響動畫或效能。 |
-| `DlgSkipNotShowTime`、`MapMessageBoxNotShowTime` | `GameUserSettings.ini` | 對話或地圖提示不再顯示的時間記錄。 | 不要手改；想重看提示可考慮刪除對應值前先備份。 |
-| `bIsAutoVines` | `GameUserSettings.ini` | 自動藤蔓或自動攀附相關，推測。 | 沒有公開文件，不建議改。 |
-| `RecordPlayerMusic`、`VehiclePlayerMusic`、`MovablePlayerMusic` | `GameUserSettings.ini` | 播放器 / 載具 / 可移動物件音樂狀態，包含曲目、時間與播放模式。 | 不要手改，除非只是要重置音樂狀態。 |
-| `SelfieScreenGameSetting` | `GameUserSettings.ini` | 拍照畫面後處理複合設定，包含伽瑪、飽和、對比、白平衡、泛光、暗角覆寫。 | 格式複雜，不建議手改。 |
-| `SelfieCameraGameSetting` | `GameUserSettings.ini` | 拍照鏡頭複合設定，包含焦距、光圈、手動對焦、旋轉、隱藏角色或怪物等。 | 格式複雜，不建議手改。 |
-| `SelfieDroneGameSetting` | `GameUserSettings.ini` | 拍照無人機設定，包含焦距、速度、加速度、聲音。 | 格式複雜，不建議手改。 |
-| `fDefaultAimmingTouchRateX_PC`、`fDefaultAimmingTouchRateY_PC`、`fAimmingTouchRate_X`、`fAimmingTouchRate_Y` | `GameUserSettings.ini` | 瞄準或觸控瞄準速率，原檔拼字是 `Aimming`。 | 可理解但容易影響操作，建議遊戲內調。 |
-| `CameraSlideYawSpeed`、`CameraSlidePitchSpeed`、`FPCameraSlideYawSpeed`、`FPCameraSlidePitchSpeed` | `GameUserSettings.ini` | 一般與第一人稱鏡頭左右 / 上下滑動速度。 | 可理解但建議小幅調整。 |
-| `fDefaultCameraSlideYawSpeed_PC`、`fDefaultCameraSlidePitchSpeed_PC`、`fDefaultFPCameraSlideYawSpeed_PC`、`fDefaultFPCameraSlidePitchSpeed_PC` | `GameUserSettings.ini` | PC 預設鏡頭滑動速度記錄。 | 不建議改預設值；改實際值即可。 |
-| `LastUserConfirmedResolutionSizeX`、`LastUserConfirmedResolutionSizeY` | `GameUserSettings.ini` | 上次使用者確認的解析度。 | 不要改，除非同步修改解析度並能接受回退風險。 |
-| `LastConfirmedFullscreenMode` | `GameUserSettings.ini` | 上次確認的顯示模式。 | 不要改，除非修復顯示模式異常。 |
-| `DesiredScreenWidth`、`DesiredScreenHeight`、`LastUserConfirmedDesiredScreenWidth`、`LastUserConfirmedDesiredScreenHeight` | `GameUserSettings.ini` | 期望畫面尺寸與上次確認值。 | 不要改；通常由引擎維護。 |
-| `LastRecommendedScreenWidth`、`LastRecommendedScreenHeight` | `GameUserSettings.ini` | 引擎建議解析度記錄。`-1` 通常代表未產生建議。 | 不要改。 |
-| `LastCPUBenchmarkResult`、`LastGPUBenchmarkResult`、`LastGPUBenchmarkMultiplier` | `GameUserSettings.ini` | 硬體效能測試結果與倍率。 | 不要改；可能影響自動建議畫質。 |
-| `AudioQualityLevel`、`LastConfirmedAudioQualityLevel` | `GameUserSettings.ini` | 音訊品質等級與上次確認值。 | 通常不用改。 |
-| `bUseHDRDisplayOutput`、`HDRDisplayOutputNits` | `GameUserSettings.ini` | HDR 輸出與亮度尼特值。 | 只有 HDR 螢幕與系統設定正確時才建議調整。 |
-| `WindowPositions` | `GameUserSettings.ini` | 視窗位置。 | 通常不需要改；視窗跑到看不到時才考慮重置。 |
-| `DrumKeyList` | `GameUserSettings.ini` | 打鼓或節奏面板按鍵對應，包含 PC 鍵、手把鍵與面板名稱。 | 格式複雜，建議在遊戲內改按鍵。 |
-| `bUseDesiredScreenHeight` | `GameUserSettings.ini` | Unreal 期望高度套用旗標。 | 不要改。 |
-| `Param3` | `GameUserSettings.ini` | 本機登入或平台狀態資料，內容仍像加密字串。 | 不要改，也不要公開。 |
-| `LastLoginUsername`、`LastLoginPassword` | `GameUserSettings.ini` | 上次登入帳號與密碼相關資料，內容仍像加密字串。 | 不要改，也不要公開。 |
-| `_NoticeTitle`、`Notice_0`、`Notice_204241`、`Notice_204242`、`Notice_204243`、`Notice_204244`、`Notice_204271`、`Notice_204272`、`Notice_204273`、`Notice_204274`、`Notice_204275`、`Notice_204276` | `GameUserSettings.ini` | 公告已讀或公告紀錄。 | 不要改；想重看公告可先備份再重置。 |
-| `CachedClientID` | `Engine.ini` | 依 section 名稱推測，與 Unreal `StatelessConnectHandlerComponent` 網路握手元件保存的快取用戶端 ID 有關。 | 不要改；可能影響連線或登入流程。 |
-
-### 查證來源
-
-- [Unreal Engine UGameUserSettings](https://dev.epicgames.com/documentation/unreal-engine/API/Runtime/Engine/UGameUserSettings?lang=en-US)：使用者設定、幀率限制、解析度、視窗模式、VSync、HDR、品質等級。
-- [Unreal Engine Scalability Reference](https://dev.epicgames.com/documentation/unreal-engine/scalability-reference-for-unreal-engine?lang=en-US)：`sg.*` 畫質分組與渲染比例。
-- [Unreal Engine Dynamic Resolution](https://dev.epicgames.com/documentation/en-us/unreal-engine/dynamic-resolution-in-unreal-engine?application_version=5.6)：動態解析度與畫面比例概念。
-- [NVIDIA Streamline](https://developer.nvidia.com/rtx/streamline)：DLSS、Frame Generation、Reflex 等整合框架。
-- [NVIDIA DLSS Unreal Engine 技術文章](https://developer.nvidia.com/blog/?p=24048)：DLSS 品質模式與 Unreal Engine 外掛概念。
-- [AMD FSR Unreal Engine 外掛指南](https://gpuopen.com/learn/ue-fsr/)：FSR 品質模式、與 `r.ScreenPercentage` 的關係、Frame Generation 相關設定。
-- [Apple MetalFX](https://developer.apple.com/documentation/metalfx)：MetalFX 時序抗鋸齒與升頻。
-- [Unreal Engine StatelessConnectHandlerComponent](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/PacketHandlers/StatelessConnectHandlerComponent/UpdateSecret)：用來理解 `Engine.ini` 中該 section 是網路握手元件；`CachedClientID` 本身未找到官方公開鍵值說明。
-
-## 建置
-
-一般建置：
-
-```powershell
+# 建置
 dotnet build .\NTE-iniEditor.sln -c Release
-```
 
-執行測試：
-
-```powershell
+# 執行測試（採用專案內建的簡易測試執行器）
 dotnet run --project .\tests\NTE-iniEditor.Tests\NTE-iniEditor.Tests.csproj -c Release
-```
 
-發佈 Windows Native AOT 執行檔：
-
-```powershell
+# 發佈 Windows Native AOT 單一執行檔
 dotnet publish .\src\NTE-iniEditor\NTE-iniEditor.csproj -c Release -r win-x64 --self-contained true
 ```
 
-產物位置：
+發佈產物位置：
 
 ```text
 src\NTE-iniEditor\bin\Release\net8.0\win-x64\publish\NTE-iniEditor.exe
 ```
 
-## 備份
+## 注意事項
 
-每次寫回前，工具會在原檔旁建立備份，例如：
-
-```text
-GameUserSettings.ini.bak-20260606-191500
-Engine.ini.bak-20260606-191500
-```
-
-## 專案簡介
-
-NTE-iniEditor：用於編輯 NTE 加密本機 ini 設定檔的 Windows Native AOT 小工具。
-
-## 發行說明草稿
-
-初版功能：
-
-- 支援 `Saved`、`Saved_GAT`、`Saved_Global` 三種本機資料目錄。
-- 預設同時編輯 `GameUserSettings.ini` 與 `Engine.ini`。
-- 支援命令列參數指定區服、設定檔與金鑰。
-- 編輯前解密，儲存後重新加密並備份原檔。
+- 本工具為**非官方工具**，修改遊戲設定有風險，請自行斟酌；出問題時可用自動產生的 `.bak` 檔還原。
+- 使用前請關閉遊戲。
+- 修改 `Version`、`GameVersion`，或解析度 / 顯示模式相關的「上次確認值」，可能導致遊戲重建設定或無法正常啟動，非必要請勿更動。
+- 不要外流 `Param3`、登入帳密、公告等個人或登入相關資料。
